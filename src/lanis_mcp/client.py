@@ -162,6 +162,13 @@ def get_client() -> LanisClient:
             "+ LANIS_USERNAME + LANIS_PASSWORD"
         )
 
+    # lanisapi writes html_logs.txt and session.json into the CWD.
+    # Switch to a writable directory before instantiating the client so this
+    # works in Docker containers with a read-only root filesystem.
+    data_dir = os.environ.get("LANIS_DATA_DIR", "/tmp")
+    os.makedirs(data_dir, exist_ok=True)
+    os.chdir(data_dir)
+
     _client = LanisClient(auth)
     _client.authenticate()
     return _client

@@ -25,6 +25,10 @@ run = ".venv/bin/ruff check src/ tests/"
 description = "Format source with ruff"
 run = ".venv/bin/ruff format src/ tests/"
 
+[tasks.docker-build]
+description = "Build the Docker image"
+run = "docker build -t lanis-mcp ."
+
 [tasks.inspect]
 description = "Launch the MCP inspector UI"
 run = "npx @modelcontextprotocol/inspector .venv/bin/lanis-mcp"
