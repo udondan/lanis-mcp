@@ -1,0 +1,22 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "lanis-mcp"
+version = "0.1.0"
+description = "MCP server for Schulportal Hessen (Lanis)"
+requires-python = ">=3.11"
+dependencies = [
+    "mcp[cli]>=1.0.0",
+    "lanisapi==0.4.1",
+]
+
+[project.scripts]
+lanis-mcp = "lanis_mcp.server:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/lanis_mcp"]
+
+[tool.hatch.envs.default]
+dependencies = []
