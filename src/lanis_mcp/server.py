@@ -19,10 +19,12 @@ Required environment variables (one of the two authentication modes):
 import json
 from datetime import datetime, date
 from enum import Enum
-from typing import Optional, Any
+from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 from pydantic import BaseModel, Field, ConfigDict
+
+import lanisapi.functions.schools as _lanisapi_schools
 
 from lanis_mcp.client import get_client, reset_client
 
@@ -68,6 +70,88 @@ def _truncate(text: str) -> str:
             + "\n\n[Response truncated. Use filters to narrow results.]"
         )
     return text
+
+
+# ---------------------------------------------------------------------------
+# Tool: lanis_get_schools
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool(
+    name="lanis_get_schools",
+    annotations={
+        "title": "Get All Lanis Schools",
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": True,
+    },
+)
+async def lanis_get_schools(
+    response_format: ResponseFormat = ResponseFormat.MARKDOWN,
+) -> str:
+    """Return all schools registered in Schulportal Hessen (Lanis).
+
+    Fetches the complete list of schools with their ID, name, and city.
+    This tool does NOT require authentication and can be used to look up
+    the school ID needed for configuring Lanis credentials.
+
+    Args:
+        response_format: Output format - 'markdown' (default) or 'json'.
+
+    Returns:
+        List of schools. JSON schema:
+        {
+            "count": int,
+            "schools": [
+                {
+                    "id": str,
+                    "name": str,
+                    "city": str
+                }
+            ]
+        }
+
+    Error Handling:
+        - Returns "Error: ..." on API failure
+        - Returns "No schools found." if the list is empty
+    """
+    try:
+        schools = _lanisapi_schools._get_schools()
+
+        if not schools:
+            return "No schools found."
+
+        if response_format == ResponseFormat.JSON:
+            data = {
+                "count": len(schools),
+                "schools": [
+                    {
+                        "id": _to_str(s.get("Id")),
+                        "name": _to_str(s.get("Name")),
+                        "city": _to_str(s.get("Ort")),
+                    }
+                    for s in schools
+                ],
+            }
+            return _truncate(json.dumps(data, indent=2, ensure_ascii=False))
+
+        lines = [
+            "# Schulen im Schulportal Hessen",
+            "",
+            f"_{len(schools)} Schule(n)_",
+            "",
+        ]
+        for s in schools:
+            name = _to_str(s.get("Name"))
+            city = _to_str(s.get("Ort"))
+            school_id = _to_str(s.get("Id"))
+            lines.append(f"- **{name}** ({city}) — ID: `{school_id}`")
+
+        return _truncate("\n".join(lines))
+
+    except Exception as e:
+        return _handle_error(e)
 
 
 # ---------------------------------------------------------------------------
@@ -212,6 +296,13 @@ class CalendarInput(BaseModel):
         default=ResponseFormat.MARKDOWN,
         description="Output format: 'markdown' or 'json'",
     )
+    include_responsible: bool = Field(
+        default=False,
+        description=(
+            "If True, fetch the responsible person for each event. "
+            "Warning: makes one extra API call per event and may be slow."
+        ),
+    )
 
 
 @mcp.tool(
@@ -235,6 +326,8 @@ async def lanis_get_calendar(params: CalendarInput) -> str:
             - start (str): Start date as YYYY-MM-DD
             - end (str): End date as YYYY-MM-DD
             - response_format (str): 'markdown' (default) or 'json'
+            - include_responsible (bool): If True, fetch the responsible person
+              for each event. Warning: makes one extra API call per event.
 
     Returns:
         Calendar events for the date range. JSON schema:
@@ -249,7 +342,8 @@ async def lanis_get_calendar(params: CalendarInput) -> str:
                     "place": str,
                     "start": "YYYY-MM-DD HH:MM",
                     "end": "YYYY-MM-DD HH:MM",
-                    "whole_day": bool
+                    "whole_day": bool,
+                    "responsible": str   # only present when include_responsible=True
                 }
             ]
         }
@@ -279,22 +373,31 @@ async def lanis_get_calendar(params: CalendarInput) -> str:
                 return dt.strftime("%Y-%m-%d")
             return _to_str(dt)
 
+        def _get_responsible(ev: Any) -> str:
+            try:
+                return _to_str(ev.responsible())
+            except Exception:
+                return ""
+
         if params.response_format == ResponseFormat.JSON:
+            event_list = []
+            for ev in events:
+                entry = {
+                    "title": _to_str(ev.title),
+                    "description": _to_str(ev.description),
+                    "place": _to_str(ev.place),
+                    "start": _fmt_dt(ev.start),
+                    "end": _fmt_dt(ev.end),
+                    "whole_day": bool(ev.whole_day),
+                }
+                if params.include_responsible:
+                    entry["responsible"] = _get_responsible(ev)
+                event_list.append(entry)
             data = {
                 "start": params.start,
                 "end": params.end,
                 "count": len(events),
-                "events": [
-                    {
-                        "title": _to_str(ev.title),
-                        "description": _to_str(ev.description),
-                        "place": _to_str(ev.place),
-                        "start": _fmt_dt(ev.start),
-                        "end": _fmt_dt(ev.end),
-                        "whole_day": bool(ev.whole_day),
-                    }
-                    for ev in events
-                ],
+                "events": event_list,
             }
             return _truncate(json.dumps(data, indent=2, ensure_ascii=False))
 
@@ -316,6 +419,10 @@ async def lanis_get_calendar(params: CalendarInput) -> str:
                 lines.append(f"- **Ort:** {_to_str(ev.place)}")
             if ev.description:
                 lines.append(f"- **Beschreibung:** {_to_str(ev.description)}")
+            if params.include_responsible:
+                responsible = _get_responsible(ev)
+                if responsible:
+                    lines.append(f"- **Verantwortlich:** {responsible}")
             lines.append("")
 
         return _truncate("\n".join(lines))
@@ -336,6 +443,7 @@ async def lanis_get_calendar(params: CalendarInput) -> str:
 )
 async def lanis_get_calendar_of_month(
     response_format: ResponseFormat = ResponseFormat.MARKDOWN,
+    include_responsible: bool = False,
 ) -> str:
     """Return all calendar events for the current month from Lanis.
 
@@ -344,9 +452,13 @@ async def lanis_get_calendar_of_month(
 
     Args:
         response_format: Output format - 'markdown' (default) or 'json'.
+        include_responsible: If True, fetch the responsible person for each
+            event. Warning: makes one extra API call per event and may be slow.
 
     Returns:
         Same structure as lanis_get_calendar for the current month.
+        When include_responsible=True, each event also includes a
+        'responsible' field with the responsible person's name.
 
     Error Handling:
         - Returns "Error: ..." on API or auth failure
@@ -367,24 +479,33 @@ async def lanis_get_calendar_of_month(
                 return dt.strftime("%Y-%m-%d")
             return _to_str(dt)
 
+        def _get_responsible(ev: Any) -> str:
+            try:
+                return _to_str(ev.responsible())
+            except Exception:
+                return ""
+
         now = datetime.now()
         month_label = now.strftime("%B %Y")
 
         if response_format == ResponseFormat.JSON:
+            event_list = []
+            for ev in events:
+                entry = {
+                    "title": _to_str(ev.title),
+                    "description": _to_str(ev.description),
+                    "place": _to_str(ev.place),
+                    "start": _fmt_dt(ev.start),
+                    "end": _fmt_dt(ev.end),
+                    "whole_day": bool(ev.whole_day),
+                }
+                if include_responsible:
+                    entry["responsible"] = _get_responsible(ev)
+                event_list.append(entry)
             data = {
                 "month": now.strftime("%Y-%m"),
                 "count": len(events),
-                "events": [
-                    {
-                        "title": _to_str(ev.title),
-                        "description": _to_str(ev.description),
-                        "place": _to_str(ev.place),
-                        "start": _fmt_dt(ev.start),
-                        "end": _fmt_dt(ev.end),
-                        "whole_day": bool(ev.whole_day),
-                    }
-                    for ev in events
-                ],
+                "events": event_list,
             }
             return _truncate(json.dumps(data, indent=2, ensure_ascii=False))
 
@@ -401,6 +522,10 @@ async def lanis_get_calendar_of_month(
                 lines.append(f"- **Ort:** {_to_str(ev.place)}")
             if ev.description:
                 lines.append(f"- **Beschreibung:** {_to_str(ev.description)}")
+            if include_responsible:
+                responsible = _get_responsible(ev)
+                if responsible:
+                    lines.append(f"- **Verantwortlich:** {responsible}")
             lines.append("")
 
         return _truncate("\n".join(lines))
@@ -748,6 +873,145 @@ async def lanis_get_available_apps() -> str:
         for app in available:
             lines.append(f"- {app}")
         return "\n".join(lines)
+    except Exception as e:
+        return _handle_error(e)
+
+
+# ---------------------------------------------------------------------------
+# Tool: lanis_get_folders
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool(
+    name="lanis_get_folders",
+    annotations={
+        "title": "Get Lanis Dashboard Folders",
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": True,
+    },
+)
+async def lanis_get_folders(
+    response_format: ResponseFormat = ResponseFormat.MARKDOWN,
+) -> str:
+    """Return all folder/category groupings from the Lanis dashboard.
+
+    Fetches the organizational folders that group apps on the Lanis portal.
+    Each folder has a name, a symbol (Font Awesome / Glyphicons icon), and
+    an optional colour.
+
+    Args:
+        response_format: Output format - 'markdown' (default) or 'json'.
+
+    Returns:
+        List of folders. JSON schema:
+        {
+            "count": int,
+            "folders": [
+                {
+                    "name": str,
+                    "symbol": str,
+                    "colour": str   # may be empty if no colour is set
+                }
+            ]
+        }
+
+    Error Handling:
+        - Returns "Error: ..." on API or auth failure
+        - Returns "No folders found." if none are available
+    """
+    try:
+        client = get_client()
+        folders = client.get_folders()
+
+        if not folders:
+            return "No folders found."
+
+        if response_format == ResponseFormat.JSON:
+            data = {
+                "count": len(folders),
+                "folders": [
+                    {
+                        "name": _to_str(f.name),
+                        "symbol": _to_str(f.symbol),
+                        "colour": _to_str(f.colour),
+                    }
+                    for f in folders
+                ],
+            }
+            return _truncate(json.dumps(data, indent=2, ensure_ascii=False))
+
+        lines = ["# Lanis Ordner", "", f"_{len(folders)} Ordner_", ""]
+        for f in folders:
+            parts = [f"**{_to_str(f.name)}**"]
+            if f.symbol:
+                parts.append(f"Symbol: {_to_str(f.symbol)}")
+            if f.colour:
+                parts.append(f"Farbe: {_to_str(f.colour)}")
+            lines.append("- " + " | ".join(parts))
+
+        return _truncate("\n".join(lines))
+
+    except Exception as e:
+        return _handle_error(e)
+
+
+# ---------------------------------------------------------------------------
+# Tool: lanis_check_app_availability
+# ---------------------------------------------------------------------------
+
+_SUPPORTED_APPS = [
+    "Kalender",
+    "Mein Unterricht",
+    "Nachrichten - Beta-Version",
+    "Vertretungsplan",
+]
+
+
+@mcp.tool(
+    name="lanis_check_app_availability",
+    annotations={
+        "title": "Check If a Specific App Is Available",
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": True,
+    },
+)
+async def lanis_check_app_availability(
+    app_name: str,
+) -> str:
+    """Check whether a specific Lanis app is available at the user's school.
+
+    Checks one of the four LanisAPI-supported apps to see if it is enabled
+    at the authenticated user's school.
+
+    Args:
+        app_name: The app to check. Must be one of:
+            - "Kalender"
+            - "Mein Unterricht"
+            - "Nachrichten - Beta-Version"
+            - "Vertretungsplan"
+
+    Returns:
+        A plain-text message indicating whether the app is available.
+
+    Error Handling:
+        - Returns "Error: ..." on API or auth failure
+        - Returns "Error: Unknown app ..." for invalid app names
+    """
+    if app_name not in _SUPPORTED_APPS:
+        valid = ", ".join(f'"{a}"' for a in _SUPPORTED_APPS)
+        return f'Error: Unknown app "{app_name}". Valid options are: {valid}'
+
+    try:
+        client = get_client()
+        available = client.get_app_availability(app_name)
+        if available:
+            return f'"{app_name}" is available at your school.'
+        return f'"{app_name}" is not available at your school.'
+
     except Exception as e:
         return _handle_error(e)
 
