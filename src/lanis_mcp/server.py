@@ -17,16 +17,21 @@ Required environment variables (one of the two authentication modes):
 """
 
 import json
+import re
 from datetime import datetime, date
 from enum import Enum
-from typing import Any
+from typing import Any, Optional
 
 from mcp.server.fastmcp import FastMCP
 from pydantic import BaseModel, Field, ConfigDict
+from selectolax.parser import HTMLParser as _HTMLParser
 
 import lanisapi.functions.schools as _lanisapi_schools
+from lanisapi.helpers.request import Request as _Request
 
 from lanis_mcp.client import get_client, reset_client
+
+_LANIS_BASE = "https://start.schulportal.hessen.de"
 
 
 mcp = FastMCP("lanis_mcp")
@@ -1011,6 +1016,658 @@ async def lanis_check_app_availability(
         if available:
             return f'"{app_name}" is available at your school.'
         return f'"{app_name}" is not available at your school.'
+
+    except Exception as e:
+        return _handle_error(e)
+
+
+# ---------------------------------------------------------------------------
+# Tool: lanis_get_timetable
+# ---------------------------------------------------------------------------
+
+_DAYS = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag"]
+
+
+@mcp.tool(
+    name="lanis_get_timetable",
+    annotations={
+        "title": "Get Timetable (Stundenplan)",
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": True,
+    },
+)
+async def lanis_get_timetable(
+    response_format: ResponseFormat = ResponseFormat.MARKDOWN,
+) -> str:
+    """Return the weekly timetable (Stundenplan) from Lanis.
+
+    Fetches the current class timetable showing which subjects are taught
+    on which day and hour, including room and teacher information.
+
+    Args:
+        response_format: Output format - 'markdown' (default) or 'json'.
+
+    Returns:
+        Timetable data. JSON schema:
+        {
+            "class_name": str,
+            "valid_from": "YYYY-MM-DD",
+            "entries": [
+                {
+                    "hour": str,        # e.g. "erste Stunde"
+                    "time": str,        # e.g. "08:00 - 08:45"
+                    "day": str,         # e.g. "Montag"
+                    "subject": str,     # subject code
+                    "room": str,        # room number/name
+                    "teacher": str,     # teacher abbreviation
+                    "info": str         # full info from title attribute
+                }
+            ]
+        }
+
+    Error Handling:
+        - Returns "Error: ..." on API or auth failure
+        - Returns "No timetable entries found." if the timetable is empty
+    """
+    try:
+        get_client()  # ensure authenticated
+        resp = _Request.client.get(
+            f"{_LANIS_BASE}/stundenplan.php",
+            follow_redirects=True,
+        )
+        tree = _HTMLParser(resp.text)
+
+        # Extract class name from title
+        title_node = tree.css_first("title")
+        title_text = title_node.text(strip=True) if title_node else ""
+        class_name = title_text.split(" - ")[0].strip() if " - " in title_text else ""
+
+        # Extract plan validity date
+        plan_div = tree.css_first("div.plan[data-date]")
+        valid_from = plan_div.attributes.get("data-date", "") if plan_div else ""
+
+        # Parse timetable rows
+        entries: list[dict[str, str]] = []
+        rows = tree.css("table.table-hoverRowspan tbody tr")
+
+        for row in rows:
+            cells = row.css("td")
+            if not cells:
+                continue
+
+            # First cell: hour label and time
+            hour_cell = cells[0]
+            hour_name_node = hour_cell.css_first("b")
+            hour_name = hour_name_node.text(strip=True) if hour_name_node else ""
+            time_node = hour_cell.css_first("small")
+            time_text = time_node.text(strip=True) if time_node else ""
+
+            if not hour_name:
+                continue
+
+            # Remaining cells: Mon–Fri (index 1–5)
+            for day_idx, cell in enumerate(cells[1:], 0):
+                if day_idx >= len(_DAYS):
+                    break
+                stunde = cell.css_first("div.stunde")
+                if not stunde:
+                    continue
+
+                subject_node = stunde.css_first("b")
+                subject = subject_node.text(strip=True) if subject_node else ""
+                teacher_node = stunde.css_first("small")
+                teacher = teacher_node.text(strip=True) if teacher_node else ""
+                info = _to_str(stunde.attributes.get("title", ""))
+
+                # Extract room: text between subject and teacher
+                full_text = stunde.text(strip=True)
+                room = ""
+                if subject and teacher and full_text:
+                    # Remove subject and teacher from full text to get room
+                    room_raw = full_text.replace(subject, "", 1).replace(teacher, "", 1)
+                    room = room_raw.strip()
+
+                entries.append(
+                    {
+                        "hour": hour_name,
+                        "time": time_text,
+                        "day": _DAYS[day_idx],
+                        "subject": subject,
+                        "room": room,
+                        "teacher": teacher,
+                        "info": info,
+                    }
+                )
+
+        if not entries:
+            return "No timetable entries found."
+
+        if response_format == ResponseFormat.JSON:
+            data = {
+                "class_name": class_name,
+                "valid_from": valid_from,
+                "entries": entries,
+            }
+            return _truncate(json.dumps(data, indent=2, ensure_ascii=False))
+
+        lines = [
+            f"# Stundenplan – {class_name}",
+            "",
+        ]
+        if valid_from:
+            lines.append(f"_Gültig ab: {valid_from}_")
+            lines.append("")
+
+        # Group by day for readable output
+        for day in _DAYS:
+            day_entries = [e for e in entries if e["day"] == day]
+            if not day_entries:
+                continue
+            lines.append(f"## {day}")
+            for e in day_entries:
+                parts = [f"**{e['hour']}**"]
+                if e["time"]:
+                    parts.append(f"({e['time']})")
+                if e["subject"]:
+                    parts.append(f"– {e['subject']}")
+                if e["room"]:
+                    parts.append(f"Raum {e['room']}")
+                if e["teacher"]:
+                    parts.append(f"bei {e['teacher']}")
+                lines.append("- " + " ".join(parts))
+            lines.append("")
+
+        return _truncate("\n".join(lines))
+
+    except Exception as e:
+        return _handle_error(e)
+
+
+# ---------------------------------------------------------------------------
+# Tool: lanis_get_learning_groups
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool(
+    name="lanis_get_learning_groups",
+    annotations={
+        "title": "Get Learning Groups (Lerngruppen)",
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": True,
+    },
+)
+async def lanis_get_learning_groups(
+    response_format: ResponseFormat = ResponseFormat.MARKDOWN,
+) -> str:
+    """Return the learning groups (Lerngruppen) the user belongs to.
+
+    Fetches all learning groups/courses the authenticated user is enrolled in,
+    including subject name, course code, semester, and teacher information.
+
+    Args:
+        response_format: Output format - 'markdown' (default) or 'json'.
+
+    Returns:
+        List of learning groups. JSON schema:
+        {
+            "count": int,
+            "groups": [
+                {
+                    "id": str,
+                    "semester": str,
+                    "course_name": str,
+                    "course_code": str,
+                    "teacher": str
+                }
+            ]
+        }
+
+    Error Handling:
+        - Returns "Error: ..." on API or auth failure
+        - Returns "No learning groups found." if there are none
+    """
+    try:
+        get_client()  # ensure authenticated
+        resp = _Request.client.get(
+            f"{_LANIS_BASE}/lerngruppen.php",
+            follow_redirects=True,
+        )
+        tree = _HTMLParser(resp.text)
+
+        table = tree.css_first("table#LGs")
+        if not table:
+            return "No learning groups found."
+
+        rows = table.css("tbody tr")
+        groups: list[dict[str, str]] = []
+
+        for row in rows:
+            cells = row.css("td")
+            if len(cells) < 3:
+                continue
+
+            group_id = _to_str(row.attributes.get("data-id", ""))
+            semester = cells[0].text(strip=True)
+
+            # Course cell: name text + code in <small>
+            # HTML: "Deutsch 05e <small>(052D05 - GYM)</small>"
+            course_cell = cells[1]
+            small_node = course_cell.css_first("small")
+            course_code_raw = small_node.text(strip=True) if small_node else ""
+            # Strip surrounding parentheses from code: "(052D05 - GYM)" → "052D05 - GYM"
+            course_code = re.sub(r"^\s*\(\s*|\s*\)\s*$", "", course_code_raw).strip()
+            # Remove the small tag text to get just the course name
+            course_name = course_cell.text(strip=True)
+            if course_code_raw:
+                course_name = course_name.replace(course_code_raw, "").strip()
+            # Clean up any trailing parentheses that may remain
+            course_name = re.sub(r"\s*\(\s*\)\s*$", "", course_name).strip()
+
+            # Teacher cell: button with title="Full Name (Abbrev)"
+            teacher_btn = cells[2].css_first("button[title]")
+            teacher = (
+                _to_str(teacher_btn.attributes.get("title", "")) if teacher_btn else ""
+            )
+
+            groups.append(
+                {
+                    "id": group_id,
+                    "semester": semester,
+                    "course_name": course_name,
+                    "course_code": course_code,
+                    "teacher": teacher,
+                }
+            )
+
+        if not groups:
+            return "No learning groups found."
+
+        if response_format == ResponseFormat.JSON:
+            data = {"count": len(groups), "groups": groups}
+            return _truncate(json.dumps(data, indent=2, ensure_ascii=False))
+
+        lines = ["# Lerngruppen", "", f"_{len(groups)} Lerngruppe(n)_", ""]
+        for g in groups:
+            lines.append(f"## {g['course_name']}")
+            if g["course_code"]:
+                lines.append(f"- **Kurs:** {g['course_code']}")
+            lines.append(f"- **Halbjahr:** {g['semester']}")
+            if g["teacher"]:
+                lines.append(f"- **Lehrkraft:** {g['teacher']}")
+            lines.append("")
+
+        return _truncate("\n".join(lines))
+
+    except Exception as e:
+        return _handle_error(e)
+
+
+# ---------------------------------------------------------------------------
+# Tool: lanis_get_file_storage
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool(
+    name="lanis_get_file_storage",
+    annotations={
+        "title": "Get File Storage (Dateispeicher)",
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": True,
+    },
+)
+async def lanis_get_file_storage(
+    folder_id: Optional[str] = None,
+    response_format: ResponseFormat = ResponseFormat.MARKDOWN,
+) -> str:
+    """Return the contents of the school file storage (Dateispeicher).
+
+    Lists folders and files in the Lanis file storage system. By default
+    returns the root level. Use folder_id to navigate into sub-folders.
+
+    Args:
+        folder_id: Optional folder ID to navigate into. Omit for root level.
+        response_format: Output format - 'markdown' (default) or 'json'.
+
+    Returns:
+        Folder contents. JSON schema:
+        {
+            "folder_id": str,
+            "folder_name": str,
+            "folders": [
+                {
+                    "id": str,
+                    "name": str,
+                    "description": str
+                }
+            ],
+            "files": [
+                {
+                    "id": str,
+                    "name": str,
+                    "description": str,
+                    "download_url": str
+                }
+            ]
+        }
+
+    Error Handling:
+        - Returns "Error: ..." on API or auth failure
+        - Returns "No items found." if the folder is empty
+    """
+    try:
+        get_client()  # ensure authenticated
+
+        if folder_id:
+            url = f"{_LANIS_BASE}/dateispeicher.php"
+            params: dict[str, str] = {"a": "view", "folder": folder_id}
+        else:
+            url = f"{_LANIS_BASE}/dateispeicher.php"
+            params = {}
+
+        resp = _Request.client.get(url, params=params, follow_redirects=True)
+        tree = _HTMLParser(resp.text)
+
+        # Get current folder name from h1
+        h1 = tree.css_first("#content h1")
+        current_folder_name = h1.text(strip=True) if h1 else "Start"
+        # Clean up icon text from h1
+        current_folder_name = re.sub(r"^\s*\S+\s*", "", current_folder_name).strip()
+        if not current_folder_name:
+            current_folder_name = "Start"
+
+        current_folder_id = folder_id or "0"
+
+        # Parse sub-folders
+        folders: list[dict[str, str]] = []
+        for folder_div in tree.css("div.thumbnail.folder"):
+            fid = _to_str(folder_div.attributes.get("data-id", ""))
+            fname = _to_str(folder_div.attributes.get("data-name", ""))
+            desc_node = folder_div.css_first("p.desc small")
+            fdesc = desc_node.text(strip=True) if desc_node else ""
+            if fid and fname:
+                folders.append({"id": fid, "name": fname, "description": fdesc})
+
+        # Parse files (non-folder thumbnails with data-id)
+        files: list[dict[str, str]] = []
+        for file_row in tree.css("tr[data-id][data-name]"):
+            fid = _to_str(file_row.attributes.get("data-id", ""))
+            fname = _to_str(file_row.attributes.get("data-name", ""))
+            # Try to find download link
+            dl_link = file_row.css_first(
+                "a[href*='download'], a[href*='dateispeicher']"
+            )
+            dl_url = _to_str(dl_link.attributes.get("href", "")) if dl_link else ""
+            if dl_url and not dl_url.startswith("http"):
+                dl_url = f"{_LANIS_BASE}/{dl_url.lstrip('/')}"
+            if fid and fname:
+                files.append(
+                    {
+                        "id": fid,
+                        "name": fname,
+                        "description": "",
+                        "download_url": dl_url,
+                    }
+                )
+
+        if not folders and not files:
+            return f"No items found in folder '{current_folder_name}'."
+
+        if response_format == ResponseFormat.JSON:
+            data = {
+                "folder_id": current_folder_id,
+                "folder_name": current_folder_name,
+                "folders": folders,
+                "files": files,
+            }
+            return _truncate(json.dumps(data, indent=2, ensure_ascii=False))
+
+        lines = [
+            f"# Dateispeicher – {current_folder_name}",
+            "",
+        ]
+        if folders:
+            lines.append(f"## Ordner ({len(folders)})")
+            for f in folders:
+                lines.append(f"- **{f['name']}** (ID: `{f['id']}`)")
+                if f["description"]:
+                    lines.append(f"  _{f['description']}_")
+            lines.append("")
+        if files:
+            lines.append(f"## Dateien ({len(files)})")
+            for f in files:
+                if f["download_url"]:
+                    lines.append(f"- [{f['name']}]({f['download_url']})")
+                else:
+                    lines.append(f"- **{f['name']}**")
+            lines.append("")
+
+        return _truncate("\n".join(lines))
+
+    except Exception as e:
+        return _handle_error(e)
+
+
+# ---------------------------------------------------------------------------
+# Tool: lanis_get_file_distribution
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool(
+    name="lanis_get_file_distribution",
+    annotations={
+        "title": "Get File Distribution / Announcements (Dateiverteilung)",
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": True,
+    },
+)
+async def lanis_get_file_distribution(
+    response_format: ResponseFormat = ResponseFormat.MARKDOWN,
+) -> str:
+    """Return distributed files and announcements (Dateiverteilung / GRB Infos).
+
+    Fetches files that have been distributed to the user via the Lanis
+    file distribution system (Dateiverteilung). These are typically
+    school-wide announcements or documents shared with specific groups.
+
+    Args:
+        response_format: Output format - 'markdown' (default) or 'json'.
+
+    Returns:
+        List of distributed files. JSON schema:
+        {
+            "count": int,
+            "files": [
+                {
+                    "name": str,
+                    "description": str,
+                    "download_url": str,
+                    "date": str
+                }
+            ]
+        }
+
+    Error Handling:
+        - Returns "Error: ..." on API or auth failure
+        - Returns "No distributed files available." if there are none
+    """
+    try:
+        get_client()  # ensure authenticated
+        resp = _Request.client.get(
+            f"{_LANIS_BASE}/dateiverteilung.php",
+            follow_redirects=True,
+        )
+        tree = _HTMLParser(resp.text)
+
+        # Check for "no files" alert
+        alert = tree.css_first(".alert-error, .alert-danger, .alert-warning")
+        if alert:
+            alert_text = alert.text(strip=True)
+            if "keine" in alert_text.lower() or "nicht" in alert_text.lower():
+                return "No distributed files available."
+
+        # Try to parse file listings (table rows or list items)
+        files: list[dict[str, str]] = []
+
+        # Look for table rows with file data
+        for row in tree.css("table tbody tr[data-id]"):
+            cells = row.css("td")
+            fname = cells[0].text(strip=True) if cells else ""
+            fdesc = cells[1].text(strip=True) if len(cells) > 1 else ""
+            fdate = cells[2].text(strip=True) if len(cells) > 2 else ""
+            dl_link = row.css_first("a[href]")
+            dl_url = _to_str(dl_link.attributes.get("href", "")) if dl_link else ""
+            if dl_url and not dl_url.startswith("http"):
+                dl_url = f"{_LANIS_BASE}/{dl_url.lstrip('/')}"
+            if fname:
+                files.append(
+                    {
+                        "name": fname,
+                        "description": fdesc,
+                        "download_url": dl_url,
+                        "date": fdate,
+                    }
+                )
+
+        if not files:
+            return "No distributed files available."
+
+        if response_format == ResponseFormat.JSON:
+            data = {"count": len(files), "files": files}
+            return _truncate(json.dumps(data, indent=2, ensure_ascii=False))
+
+        lines = [
+            "# Dateiverteilung – GRB Infos",
+            "",
+            f"_{len(files)} Datei(en)_",
+            "",
+        ]
+        for f in files:
+            if f["download_url"]:
+                lines.append(f"- [{f['name']}]({f['download_url']})")
+            else:
+                lines.append(f"- **{f['name']}**")
+            if f["description"]:
+                lines.append(f"  _{f['description']}_")
+            if f["date"]:
+                lines.append(f"  Datum: {f['date']}")
+
+        return _truncate("\n".join(lines))
+
+    except Exception as e:
+        return _handle_error(e)
+
+
+# ---------------------------------------------------------------------------
+# Tool: lanis_get_votes
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool(
+    name="lanis_get_votes",
+    annotations={
+        "title": "Get Active Votes / Elections (Wahlen)",
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": True,
+    },
+)
+async def lanis_get_votes(
+    response_format: ResponseFormat = ResponseFormat.MARKDOWN,
+) -> str:
+    """Return active votes and elections (Wahlen / GRB Wahlen) from Lanis.
+
+    Fetches currently active school votes and elections, such as student
+    council elections or other school-wide voting events.
+
+    Args:
+        response_format: Output format - 'markdown' (default) or 'json'.
+
+    Returns:
+        List of active votes. JSON schema:
+        {
+            "count": int,
+            "votes": [
+                {
+                    "id": str,
+                    "title": str,
+                    "description": str,
+                    "status": str
+                }
+            ]
+        }
+
+    Error Handling:
+        - Returns "Error: ..." on API or auth failure
+        - Returns "No active votes." if there are none
+    """
+    try:
+        get_client()  # ensure authenticated
+        resp = _Request.client.get(
+            f"{_LANIS_BASE}/wahl.php",
+            follow_redirects=True,
+        )
+        tree = _HTMLParser(resp.text)
+
+        # Check for "no active events" message
+        wahl_div = tree.css_first("div.modWahl")
+        if wahl_div:
+            wahl_text = wahl_div.text(strip=True)
+            if "keine" in wahl_text.lower() and "aktiv" in wahl_text.lower():
+                return "No active votes."
+
+        # Parse vote listings
+        votes: list[dict[str, str]] = []
+
+        # Look for vote items (panels, cards, or list items)
+        for item in tree.css(
+            "div.modWahl .panel, div.modWahl .card, div.modWahl li[data-id], div.modWahl tr[data-id]"
+        ):
+            vid = _to_str(item.attributes.get("data-id", ""))
+            title_node = item.css_first(
+                "h3, h4, .panel-title, .card-title, td:first-child"
+            )
+            vtitle = title_node.text(strip=True) if title_node else ""
+            desc_node = item.css_first("p, .description, td:nth-child(2)")
+            vdesc = desc_node.text(strip=True) if desc_node else ""
+            votes.append(
+                {
+                    "id": vid,
+                    "title": vtitle,
+                    "description": vdesc,
+                    "status": "active",
+                }
+            )
+
+        if not votes:
+            return "No active votes."
+
+        if response_format == ResponseFormat.JSON:
+            data = {"count": len(votes), "votes": votes}
+            return _truncate(json.dumps(data, indent=2, ensure_ascii=False))
+
+        lines = [
+            "# GRB Wahlen – Aktive Veranstaltungen",
+            "",
+            f"_{len(votes)} Wahl(en)_",
+            "",
+        ]
+        for v in votes:
+            lines.append(f"## {v['title'] or '(kein Titel)'}")
+            if v["description"]:
+                lines.append(f"_{v['description']}_")
+            lines.append(f"- **Status:** {v['status']}")
+            lines.append("")
+
+        return _truncate("\n".join(lines))
 
     except Exception as e:
         return _handle_error(e)
