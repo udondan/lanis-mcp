@@ -13,6 +13,9 @@ dependencies = [
     "lanisapi==0.4.1",
 ]
 
+[project.optional-dependencies]
+dev = ["pytest", "pytest-asyncio", "anyio"]
+
 [project.scripts]
 lanis-mcp = "lanis_mcp.server:main"
 
@@ -24,3 +27,8 @@ dependencies = []
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+filterwarnings = [
+    # lanisapi passes cookies per-request to httpx, which is deprecated in newer
+    # httpx versions. This is a third-party issue we cannot fix upstream.
+    "ignore::DeprecationWarning:httpx",
+]

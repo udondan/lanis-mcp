@@ -23,12 +23,13 @@ def _fixed_get_authentication_sid(
     cookies in a different format.  This version uses httpx's built-in cookie
     handling and falls back to robust header parsing.
     """
-    response = _Request.head(url, cookies=cookies)
+    _Request.set_cookies(cookies)
+    response = _Request.head(url)  # type: ignore[arg-type]
 
     result = httpx.Cookies()
     result.set("i", schoolid)
 
-    sid_value = response.cookies.get("sid")
+    sid_value: Optional[str] = response.cookies.get("sid")
     if not sid_value:
         for raw in response.headers.get_list("set-cookie"):
             for field in raw.split(";"):
@@ -36,6 +37,9 @@ def _fixed_get_authentication_sid(
                 if field.lower().startswith("sid="):
                     sid_value = field.split("=", 1)[1]
                     break
+
+    if not sid_value:
+        raise ValueError("Authentication failed: 'sid' cookie not found in response.")
 
     result.set("sid", sid_value)
     _LOGGER.info("Authentication - Get sid: Success.")

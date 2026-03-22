@@ -17,9 +17,18 @@ pyproject.toml     # single source of truth for build, deps, and tool config
 
 ## Environment Setup
 
+With [mise](https://mise.jdx.dev) installed:
+
+```bash
+mise install       # pin Python 3.14 for this project
+mise run setup     # create .venv and install dependencies (including dev extras)
+```
+
+Without mise:
+
 ```bash
 python -m venv .venv
-.venv/bin/pip install -e .
+.venv/bin/pip install -e ".[dev]"
 ```
 
 Required environment variables (set before running server or tests):
@@ -43,10 +52,13 @@ export LANIS_PASSWORD=...
 
 ## Build & Run Commands
 
-| Task           | Command                     |
-| -------------- | --------------------------- |
-| Run MCP server | `.venv/bin/lanis-mcp`       |
-| Build wheel    | `.venv/bin/python -m build` |
+| Task           | mise shortcut      | Raw command                     |
+| -------------- | ------------------ | ------------------------------- |
+| Bootstrap venv | `mise run setup`   | `python -m venv .venv && ...`   |
+| Run MCP server | `mise run server`  | `.venv/bin/lanis-mcp`           |
+| Build wheel    | `mise run build`   | `.venv/bin/python -m build`     |
+| Lint           | `mise run lint`    | `.venv/bin/ruff check src/ tests/` |
+| Format         | `mise run format`  | `.venv/bin/ruff format src/ tests/` |
 
 ## Test Commands
 
@@ -55,29 +67,28 @@ credentials set in the environment. Tests gracefully skip when credentials are a
 
 ```bash
 # Run all tests
+mise run test
+
+# Pass extra pytest args after --
+mise run test -- tests/test_lanis.py::TestAuthentication -v
+mise run test -- tests/test_lanis.py::TestSubstitutionPlan -v
+mise run test -- tests/test_lanis.py::TestCalendar -v
+mise run test -- tests/test_lanis.py::TestAuthentication::test_authenticate -v
+mise run test -- tests/test_lanis.py::TestSubstitutionPlan::test_get_substitution_plan_via_mcp_tool -v
+```
+
+Without mise:
+
+```bash
 .venv/bin/pytest tests/ -v
-
-# Run a single test class
 .venv/bin/pytest tests/test_lanis.py::TestAuthentication -v
-.venv/bin/pytest tests/test_lanis.py::TestSubstitutionPlan -v
-.venv/bin/pytest tests/test_lanis.py::TestCalendar -v
-
-# Run a single test function
-.venv/bin/pytest tests/test_lanis.py::TestAuthentication::test_authenticate -v
-.venv/bin/pytest tests/test_lanis.py::TestSubstitutionPlan::test_get_substitution_plan_via_mcp_tool -v
 ```
 
 Note: `TestSubstitutionPlan` tests skip automatically on weekends (no school plan).
 
 ## Lint & Format Commands
 
-Ruff is used for linting and formatting (defaults, no custom config in pyproject.toml):
-
-```bash
-.venv/bin/ruff check src/ tests/
-.venv/bin/ruff format src/ tests/
-```
-
+Ruff is used for linting and formatting (defaults, no custom config in pyproject.toml).
 No other linters or type checkers are currently configured (no mypy, pylint, black, etc.).
 
 ## Code Style Guidelines
@@ -121,13 +132,13 @@ Every tool follows this exact structure:
 ```python
 @mcp.tool(
     name="<action>",
-    annotations={
-        "title": "Human-Readable Title",
-        "readOnlyHint": True,
-        "destructiveHint": False,
-        "idempotentHint": True,
-        "openWorldHint": True,
-    },
+    annotations=ToolAnnotations(
+        title="Human-Readable Title",
+        readOnlyHint=True,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=True,
+    ),
 )
 async def lanis_<action>(
     response_format: ResponseFormat = ResponseFormat.MARKDOWN,

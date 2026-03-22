@@ -1,0 +1,30 @@
+[tools]
+python = "3.14"
+
+[tasks.setup]
+description = "Bootstrap the virtual environment"
+run = "python -m venv .venv && .venv/bin/pip install -e '.[dev]'"
+
+[tasks.server]
+description = "Run the MCP server"
+run = ".venv/bin/lanis-mcp"
+
+[tasks.build]
+description = "Build the wheel"
+run = ".venv/bin/python -m build"
+
+[tasks.test]
+description = "Run tests (pass extra pytest args after --)"
+run = ".venv/bin/pytest tests/ -v {{arg(name='args', var=true, default='')}}"
+
+[tasks.lint]
+description = "Lint source with ruff"
+run = ".venv/bin/ruff check src/ tests/"
+
+[tasks.format]
+description = "Format source with ruff"
+run = ".venv/bin/ruff format src/ tests/"
+
+[tasks.inspect]
+description = "Launch the MCP inspector UI"
+run = "npx @modelcontextprotocol/inspector .venv/bin/lanis-mcp"
