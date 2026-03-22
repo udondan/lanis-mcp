@@ -3,7 +3,49 @@
 import os
 from typing import Optional
 
+import httpx
 from lanisapi import LanisClient, LanisAccount, LanisCookie, School
+from lanisapi.helpers import authentication as _auth
+from lanisapi.helpers.request import Request as _Request
+from lanisapi.constants import LOGGER as _LOGGER
+
+
+def _fixed_get_authentication_sid(
+    url: str,
+    cookies: httpx.Cookies,
+    schoolid: str,
+) -> httpx.Cookies:
+    """Fixed version of lanisapi's get_authentication_sid.
+
+    The original crashes with an IndexError because it parses the set-cookie
+    header with hardcoded string splits that break when httpx returns the
+    cookies in a different format.  This version uses httpx's built-in cookie
+    handling and falls back to robust header parsing.
+    """
+    response = _Request.head(url, cookies=cookies)
+
+    result = httpx.Cookies()
+    result.set("i", schoolid)
+
+    sid_value = response.cookies.get("sid")
+    if not sid_value:
+        for raw in response.headers.get_list("set-cookie"):
+            for field in raw.split(";"):
+                field = field.strip()
+                if field.lower().startswith("sid="):
+                    sid_value = field.split("=", 1)[1]
+                    break
+
+    result.set("sid", sid_value)
+    _LOGGER.info("Authentication - Get sid: Success.")
+    return result
+
+
+# Patch into lanisapi.client's namespace (where _create_new_session resolves it)
+import lanisapi.client as _lanisapi_client
+
+_auth.get_authentication_sid = _fixed_get_authentication_sid
+_lanisapi_client.get_authentication_sid = _fixed_get_authentication_sid
 
 
 _client: Optional[LanisClient] = None
