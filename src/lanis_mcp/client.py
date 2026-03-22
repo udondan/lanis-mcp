@@ -1,6 +1,7 @@
 """Lanis client wrapper with lazy initialization and session management."""
 
 import os
+from difflib import SequenceMatcher
 from typing import Optional
 
 import httpx
@@ -42,10 +43,58 @@ def _fixed_get_authentication_sid(
 
 
 # Patch into lanisapi.client's namespace (where _create_new_session resolves it)
-import lanisapi.client as _lanisapi_client
+import lanisapi.client as _lanisapi_client  # noqa: E402
+import lanisapi.functions.apps as _lanisapi_apps  # noqa: E402
 
 _auth.get_authentication_sid = _fixed_get_authentication_sid
 _lanisapi_client.get_authentication_sid = _fixed_get_authentication_sid
+
+
+# ---------------------------------------------------------------------------
+# Monkey-patch: _get_available_apps — add URL-based app detection
+# ---------------------------------------------------------------------------
+
+# Maps each supported app name to the PHP filename in its link URL.
+# Schools may rename apps (e.g. "Meine Kurse" instead of "Mein Unterricht"),
+# so we fall back to URL matching when name similarity is too low.
+_APP_URL_MAP: dict[str, str] = {
+    "Kalender": "kalender.php",
+    "Mein Unterricht": "meinunterricht.php",
+    "Nachrichten - Beta-Version": "nachrichten.php",
+    "Vertretungsplan": "vertretungsplan.php",
+}
+
+
+def _fixed_get_available_apps() -> list[str]:
+    """Fixed version of lanisapi's _get_available_apps.
+
+    The original uses SequenceMatcher with a 0.8 threshold which fails when
+    schools rename apps (e.g. 'Meine Kurse' instead of 'Mein Unterricht').
+    This version adds URL-based detection as a fallback so that any app whose
+    link points to the expected PHP page is recognised regardless of its name.
+    """
+    gotten_apps = _lanisapi_apps._get_apps()
+    available_apps: list[str] = []
+
+    for app in gotten_apps:
+        for implemented, url_path in _APP_URL_MAP.items():
+            if implemented in available_apps:
+                continue
+            # Check by name similarity (original logic)
+            name_match = (
+                SequenceMatcher(None, app.name.lower(), implemented.lower()).ratio()
+                > 0.8
+            )
+            # Check by URL path (fallback for renamed apps)
+            url_match = url_path in (app.link or "")
+            if name_match or url_match:
+                available_apps.append(implemented)
+
+    _LOGGER.info("Get apps availability (patched): Success.")
+    return available_apps
+
+
+_lanisapi_apps._get_available_apps = _fixed_get_available_apps
 
 
 _client: Optional[LanisClient] = None

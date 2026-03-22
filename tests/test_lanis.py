@@ -14,6 +14,7 @@ Run with:
 import asyncio
 import os
 import tempfile
+from unittest.mock import patch, MagicMock
 
 import pytest
 
@@ -28,6 +29,161 @@ def _require_env(*names: str) -> None:
     missing = [n for n in names if not os.environ.get(n)]
     if missing:
         pytest.skip(f"Missing required env vars: {', '.join(missing)}")
+
+
+# ---------------------------------------------------------------------------
+# Unit tests: app availability detection (no live credentials needed)
+# ---------------------------------------------------------------------------
+
+
+class TestAppAvailabilityDetection:
+    """Unit tests for the monkey-patched _get_available_apps function.
+
+    These tests verify that app availability is detected by URL path in addition
+    to app name similarity, so schools that rename apps (e.g. 'Meine Kurse'
+    instead of 'Mein Unterricht') are still correctly detected.
+    """
+
+    def _make_app(self, name: str, link: str) -> MagicMock:
+        """Create a mock App object with the given name and link."""
+        app = MagicMock()
+        app.name = name
+        app.link = link
+        return app
+
+    def _clear_cache(self, fn: object) -> None:
+        """Clear the function cache if it has one (e.g. @cache decorated functions)."""
+        if hasattr(fn, "cache_clear"):
+            fn.cache_clear()  # type: ignore[union-attr]
+
+    def test_exact_name_match_detected(self):
+        """App with exact name 'Mein Unterricht' is detected as available."""
+        import lanis_mcp.client  # noqa: F401 — trigger monkey-patch
+        import lanisapi.functions.apps as apps_module
+
+        apps = [
+            self._make_app("Mein Unterricht", "https://example.com/meinunterricht.php")
+        ]
+        with patch.object(apps_module, "_get_apps", return_value=apps):
+            self._clear_cache(apps_module._get_available_apps)
+            result = apps_module._get_available_apps()
+            assert "Mein Unterricht" in result
+
+    def test_renamed_app_detected_by_url(self):
+        """App named 'Meine Kurse' linking to meinunterricht.php is detected as 'Mein Unterricht'."""
+        import lanis_mcp.client  # noqa: F401 — trigger monkey-patch
+        import lanisapi.functions.apps as apps_module
+
+        apps = [
+            self._make_app(
+                "Meine Kurse", "https://start.schulportal.hessen.de/meinunterricht.php"
+            )
+        ]
+        with patch.object(apps_module, "_get_apps", return_value=apps):
+            self._clear_cache(apps_module._get_available_apps)
+            result = apps_module._get_available_apps()
+            assert "Mein Unterricht" in result, (
+                f"Expected 'Mein Unterricht' in available apps, got: {result}"
+            )
+
+    def test_kalender_detected_by_url(self):
+        """App with different name linking to kalender.php is detected as 'Kalender'."""
+        import lanis_mcp.client  # noqa: F401 — trigger monkey-patch
+        import lanisapi.functions.apps as apps_module
+
+        apps = [
+            self._make_app(
+                "Schulkalender", "https://start.schulportal.hessen.de/kalender.php"
+            )
+        ]
+        with patch.object(apps_module, "_get_apps", return_value=apps):
+            self._clear_cache(apps_module._get_available_apps)
+            result = apps_module._get_available_apps()
+            assert "Kalender" in result, (
+                f"Expected 'Kalender' in available apps, got: {result}"
+            )
+
+    def test_vertretungsplan_detected_by_url(self):
+        """App with different name linking to vertretungsplan.php is detected."""
+        import lanis_mcp.client  # noqa: F401 — trigger monkey-patch
+        import lanisapi.functions.apps as apps_module
+
+        apps = [
+            self._make_app(
+                "Vertretungen",
+                "https://start.schulportal.hessen.de/vertretungsplan.php",
+            )
+        ]
+        with patch.object(apps_module, "_get_apps", return_value=apps):
+            self._clear_cache(apps_module._get_available_apps)
+            result = apps_module._get_available_apps()
+            assert "Vertretungsplan" in result, (
+                f"Expected 'Vertretungsplan' in available apps, got: {result}"
+            )
+
+    def test_nachrichten_detected_by_url(self):
+        """App with different name linking to nachrichten.php is detected."""
+        import lanis_mcp.client  # noqa: F401 — trigger monkey-patch
+        import lanisapi.functions.apps as apps_module
+
+        apps = [
+            self._make_app(
+                "Meine Nachrichten",
+                "https://start.schulportal.hessen.de/nachrichten.php",
+            )
+        ]
+        with patch.object(apps_module, "_get_apps", return_value=apps):
+            self._clear_cache(apps_module._get_available_apps)
+            result = apps_module._get_available_apps()
+            assert "Nachrichten - Beta-Version" in result, (
+                f"Expected 'Nachrichten - Beta-Version' in available apps, got: {result}"
+            )
+
+    def test_unrelated_app_not_detected(self):
+        """App with unrelated name and URL is not detected as any supported app."""
+        import lanis_mcp.client  # noqa: F401 — trigger monkey-patch
+        import lanisapi.functions.apps as apps_module
+
+        apps = [
+            self._make_app(
+                "Moodle", "https://start.schulportal.hessen.de/schulmoodle.php"
+            )
+        ]
+        with patch.object(apps_module, "_get_apps", return_value=apps):
+            self._clear_cache(apps_module._get_available_apps)
+            result = apps_module._get_available_apps()
+            assert "Mein Unterricht" not in result
+            assert "Kalender" not in result
+            assert "Vertretungsplan" not in result
+            assert "Nachrichten - Beta-Version" not in result
+
+    def test_no_duplicate_when_both_name_and_url_match(self):
+        """App that matches both by name and URL is only listed once."""
+        import lanis_mcp.client  # noqa: F401 — trigger monkey-patch
+        import lanisapi.functions.apps as apps_module
+
+        apps = [
+            self._make_app(
+                "Mein Unterricht",
+                "https://start.schulportal.hessen.de/meinunterricht.php",
+            )
+        ]
+        with patch.object(apps_module, "_get_apps", return_value=apps):
+            self._clear_cache(apps_module._get_available_apps)
+            result = apps_module._get_available_apps()
+            assert result.count("Mein Unterricht") == 1, (
+                f"Expected exactly one 'Mein Unterricht' entry, got: {result}"
+            )
+
+    def test_empty_app_list_returns_empty(self):
+        """Empty app list returns no available apps."""
+        import lanis_mcp.client  # noqa: F401 — trigger monkey-patch
+        import lanisapi.functions.apps as apps_module
+
+        with patch.object(apps_module, "_get_apps", return_value=[]):
+            self._clear_cache(apps_module._get_available_apps)
+            result = apps_module._get_available_apps()
+            assert result == []
 
 
 # ---------------------------------------------------------------------------
@@ -172,7 +328,11 @@ class TestCalendar:
 
 class TestTasks:
     def test_get_tasks_via_mcp_tool(self):
-        """The MCP tool lanis_get_tasks returns a non-error string."""
+        """The MCP tool lanis_get_tasks returns a non-error string.
+
+        After the fix, AppNotAvailableError must never be returned even when
+        the school uses a renamed app (e.g. 'Meine Kurse' instead of 'Mein Unterricht').
+        """
         _require_env("LANIS_SCHOOL_ID", "LANIS_USERNAME", "LANIS_PASSWORD")
 
         from lanis_mcp.server import lanis_get_tasks, ResponseFormat
@@ -184,8 +344,10 @@ class TestTasks:
             loop.close()
 
         assert isinstance(result, str)
-        if "AppNotAvailableError" in result:
-            pytest.skip("Mein Unterricht is not available at this school")
+        assert "AppNotAvailableError" not in result, (
+            "lanis_get_tasks returned AppNotAvailableError — "
+            "the URL-based availability detection is not working correctly"
+        )
         assert not result.startswith("Error:"), f"Tool returned error: {result}"
         print(f"\n  Preview: {result[:200]}")
 
@@ -204,8 +366,10 @@ class TestTasks:
             loop.close()
 
         assert isinstance(result, str)
-        if "AppNotAvailableError" in result:
-            pytest.skip("Mein Unterricht is not available at this school")
+        assert "AppNotAvailableError" not in result, (
+            "lanis_get_tasks returned AppNotAvailableError — "
+            "the URL-based availability detection is not working correctly"
+        )
         assert not result.startswith("Error:"), f"Tool returned error: {result}"
 
         if result == "No tasks found.":
