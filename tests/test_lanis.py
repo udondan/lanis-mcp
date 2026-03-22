@@ -588,3 +588,85 @@ class TestAppAvailability:
         assert result.startswith("Error:"), f"Expected error, got: {result}"
         assert "NonExistentApp" in result
         print(f"\n  Result: {result}")
+
+
+# ---------------------------------------------------------------------------
+# Unit tests: MCP tool name registration (no live credentials needed)
+# ---------------------------------------------------------------------------
+
+
+class TestToolNames:
+    """Unit tests verifying that registered MCP tool names are correct.
+
+    These tests do NOT require live credentials — they only inspect the
+    FastMCP tool registry to ensure no tool name starts with 'lanis_'.
+    Since the MCP server is registered under the name 'lanis', a tool
+    named 'lanis_get_tasks' would be exposed to clients as
+    'lanis_lanis_get_tasks' (double prefix), which is wrong.
+    """
+
+    EXPECTED_TOOL_NAMES = {
+        "get_schools",
+        "get_substitution_plan",
+        "get_calendar",
+        "get_calendar_of_month",
+        "get_tasks",
+        "get_conversations",
+        "get_apps",
+        "get_available_apps",
+        "get_folders",
+        "check_app_availability",
+        "get_timetable",
+        "get_learning_groups",
+        "get_file_storage",
+        "get_file_distribution",
+        "get_votes",
+    }
+
+    def _get_registered_tool_names(self) -> set:
+        """Return the set of tool names registered with the FastMCP instance."""
+        from lanis_mcp.server import mcp
+
+        loop = asyncio.new_event_loop()
+        try:
+            tools = loop.run_until_complete(mcp.list_tools())
+        finally:
+            loop.close()
+        return {t.name for t in tools}
+
+    def test_no_tool_name_starts_with_lanis_prefix(self):
+        """No registered tool name should start with 'lanis_'.
+
+        The MCP server is named 'lanis', so tool names must NOT include
+        the 'lanis_' prefix — otherwise clients see 'lanis_lanis_...'
+        (double prefix).
+        """
+        tool_names = self._get_registered_tool_names()
+        bad_names = [n for n in tool_names if n.startswith("lanis_")]
+        assert not bad_names, (
+            f"The following tool names incorrectly start with 'lanis_' "
+            f"(would cause double-prefix for clients): {sorted(bad_names)}"
+        )
+
+    def test_all_expected_tools_are_registered(self):
+        """All 15 expected tools are registered with the correct names."""
+        tool_names = self._get_registered_tool_names()
+        missing = self.EXPECTED_TOOL_NAMES - tool_names
+        assert not missing, (
+            f"The following expected tools are missing from the registry: "
+            f"{sorted(missing)}"
+        )
+
+    def test_no_unexpected_tools_registered(self):
+        """No extra tools beyond the expected 15 are registered."""
+        tool_names = self._get_registered_tool_names()
+        extra = tool_names - self.EXPECTED_TOOL_NAMES
+        assert not extra, f"Unexpected tools found in registry: {sorted(extra)}"
+
+    def test_tool_count_is_correct(self):
+        """Exactly 15 tools are registered."""
+        tool_names = self._get_registered_tool_names()
+        assert len(tool_names) == len(self.EXPECTED_TOOL_NAMES), (
+            f"Expected {len(self.EXPECTED_TOOL_NAMES)} tools, "
+            f"got {len(tool_names)}: {sorted(tool_names)}"
+        )

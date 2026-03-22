@@ -83,7 +83,7 @@ def _truncate(text: str) -> str:
 
 
 @mcp.tool(
-    name="lanis_get_schools",
+    name="get_schools",
     annotations={
         "title": "Get All Lanis Schools",
         "readOnlyHint": True,
@@ -165,7 +165,7 @@ async def lanis_get_schools(
 
 
 @mcp.tool(
-    name="lanis_get_substitution_plan",
+    name="get_substitution_plan",
     annotations={
         "title": "Get Substitution Plan (Vertretungsplan)",
         "readOnlyHint": True,
@@ -311,7 +311,7 @@ class CalendarInput(BaseModel):
 
 
 @mcp.tool(
-    name="lanis_get_calendar",
+    name="get_calendar",
     annotations={
         "title": "Get Calendar Events",
         "readOnlyHint": True,
@@ -437,7 +437,7 @@ async def lanis_get_calendar(params: CalendarInput) -> str:
 
 
 @mcp.tool(
-    name="lanis_get_calendar_of_month",
+    name="get_calendar_of_month",
     annotations={
         "title": "Get Current Month Calendar Events",
         "readOnlyHint": True,
@@ -545,7 +545,7 @@ async def lanis_get_calendar_of_month(
 
 
 @mcp.tool(
-    name="lanis_get_tasks",
+    name="get_tasks",
     annotations={
         "title": "Get Tasks / Homework (Mein Unterricht)",
         "readOnlyHint": True,
@@ -665,7 +665,7 @@ class ConversationsInput(BaseModel):
 
 
 @mcp.tool(
-    name="lanis_get_conversations",
+    name="get_conversations",
     annotations={
         "title": "Get Conversations / Messages (Nachrichten)",
         "readOnlyHint": True,
@@ -765,7 +765,7 @@ async def lanis_get_conversations(params: ConversationsInput) -> str:
 
 
 @mcp.tool(
-    name="lanis_get_apps",
+    name="get_apps",
     annotations={
         "title": "Get All Lanis Web Applets",
         "readOnlyHint": True,
@@ -846,7 +846,7 @@ async def lanis_get_apps(
 
 
 @mcp.tool(
-    name="lanis_get_available_apps",
+    name="get_available_apps",
     annotations={
         "title": "Get Supported Apps Available at This School",
         "readOnlyHint": True,
@@ -888,7 +888,7 @@ async def lanis_get_available_apps() -> str:
 
 
 @mcp.tool(
-    name="lanis_get_folders",
+    name="get_folders",
     annotations={
         "title": "Get Lanis Dashboard Folders",
         "readOnlyHint": True,
@@ -975,7 +975,7 @@ _SUPPORTED_APPS = [
 
 
 @mcp.tool(
-    name="lanis_check_app_availability",
+    name="check_app_availability",
     annotations={
         "title": "Check If a Specific App Is Available",
         "readOnlyHint": True,
@@ -1029,7 +1029,7 @@ _DAYS = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag"]
 
 
 @mcp.tool(
-    name="lanis_get_timetable",
+    name="get_timetable",
     annotations={
         "title": "Get Timetable (Stundenplan)",
         "readOnlyHint": True,
@@ -1191,7 +1191,7 @@ async def lanis_get_timetable(
 
 
 @mcp.tool(
-    name="lanis_get_learning_groups",
+    name="get_learning_groups",
     annotations={
         "title": "Get Learning Groups (Lerngruppen)",
         "readOnlyHint": True,
@@ -1208,6 +1208,12 @@ async def lanis_get_learning_groups(
     Fetches all learning groups/courses the authenticated user is enrolled in,
     including subject name, course code, semester, and teacher information.
 
+    Use this tool to:
+    - List all courses/subjects the user is enrolled in
+    - Look up which teacher is responsible for a given subject or course
+    - Resolve teacher abbreviations to full names (the teacher field contains
+      both the full name and the abbreviation used in substitution plans)
+
     Args:
         response_format: Output format - 'markdown' (default) or 'json'.
 
@@ -1221,7 +1227,7 @@ async def lanis_get_learning_groups(
                     "semester": str,
                     "course_name": str,
                     "course_code": str,
-                    "teacher": str
+                    "teacher": str   # full name and/or abbreviation
                 }
             ]
         }
@@ -1312,7 +1318,7 @@ async def lanis_get_learning_groups(
 
 
 @mcp.tool(
-    name="lanis_get_file_storage",
+    name="get_file_storage",
     annotations={
         "title": "Get File Storage (Dateispeicher)",
         "readOnlyHint": True,
@@ -1459,7 +1465,7 @@ async def lanis_get_file_storage(
 
 
 @mcp.tool(
-    name="lanis_get_file_distribution",
+    name="get_file_distribution",
     annotations={
         "title": "Get File Distribution / Announcements (Dateiverteilung)",
         "readOnlyHint": True,
@@ -1571,7 +1577,7 @@ async def lanis_get_file_distribution(
 
 
 @mcp.tool(
-    name="lanis_get_votes",
+    name="get_votes",
     annotations={
         "title": "Get Active Votes / Elections (Wahlen)",
         "readOnlyHint": True,

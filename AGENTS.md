@@ -111,7 +111,7 @@ be part of the public namespace (e.g., `import lanisapi.client as _lanisapi_clie
 - `snake_case` for all functions, variables, and module names
 - `PascalCase` for Pydantic models and Enum classes (e.g., `CalendarInput`, `ResponseFormat`)
 - Private helpers and module-level singletons: prefix with `_` (e.g., `_client`, `_handle_error`, `_to_str`)
-- MCP tool functions: `lanis_<action>` (e.g., `lanis_get_tasks`, `lanis_get_calendar`)
+- MCP tool functions: `lanis_<action>` (e.g., `lanis_get_tasks`, `lanis_get_calendar`) — this is the **Python function name**; the MCP `name=` string omits the `lanis_` prefix (see below)
 - Constants: `UPPER_SNAKE_CASE` (e.g., `CHARACTER_LIMIT = 25_000`)
 
 ### MCP Tool Pattern
@@ -120,7 +120,7 @@ Every tool follows this exact structure:
 
 ```python
 @mcp.tool(
-    name="lanis_<action>",
+    name="<action>",
     annotations={
         "title": "Human-Readable Title",
         "readOnlyHint": True,
