@@ -6,6 +6,7 @@ build-backend = "hatchling.build"
 name = "lanis-mcp"
 version = "0.1.0"
 description = "MCP server for Schulportal Hessen (Lanis)"
+license = "MIT"
 requires-python = ">=3.11"
 dependencies = [
     "mcp[cli]>=1.0.0",
