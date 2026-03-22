@@ -23,6 +23,7 @@ from enum import Enum
 from typing import Any, Optional
 
 from mcp.server.fastmcp import FastMCP
+from mcp.types import ToolAnnotations
 from pydantic import BaseModel, Field, ConfigDict
 from selectolax.parser import HTMLParser as _HTMLParser
 
@@ -84,13 +85,13 @@ def _truncate(text: str) -> str:
 
 @mcp.tool(
     name="get_schools",
-    annotations={
-        "title": "Get All Lanis Schools",
-        "readOnlyHint": True,
-        "destructiveHint": False,
-        "idempotentHint": True,
-        "openWorldHint": True,
-    },
+    annotations=ToolAnnotations(
+        title="Get All Lanis Schools",
+        readOnlyHint=True,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=True,
+    ),
 )
 async def lanis_get_schools(
     response_format: ResponseFormat = ResponseFormat.MARKDOWN,
@@ -166,13 +167,13 @@ async def lanis_get_schools(
 
 @mcp.tool(
     name="get_substitution_plan",
-    annotations={
-        "title": "Get Substitution Plan (Vertretungsplan)",
-        "readOnlyHint": True,
-        "destructiveHint": False,
-        "idempotentHint": True,
-        "openWorldHint": True,
-    },
+    annotations=ToolAnnotations(
+        title="Get Substitution Plan (Vertretungsplan)",
+        readOnlyHint=True,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=True,
+    ),
 )
 async def lanis_get_substitution_plan(
     response_format: ResponseFormat = ResponseFormat.MARKDOWN,
@@ -312,13 +313,13 @@ class CalendarInput(BaseModel):
 
 @mcp.tool(
     name="get_calendar",
-    annotations={
-        "title": "Get Calendar Events",
-        "readOnlyHint": True,
-        "destructiveHint": False,
-        "idempotentHint": True,
-        "openWorldHint": True,
-    },
+    annotations=ToolAnnotations(
+        title="Get Calendar Events",
+        readOnlyHint=True,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=True,
+    ),
 )
 async def lanis_get_calendar(params: CalendarInput) -> str:
     """Return calendar events from Lanis for a given date range.
@@ -438,13 +439,13 @@ async def lanis_get_calendar(params: CalendarInput) -> str:
 
 @mcp.tool(
     name="get_calendar_of_month",
-    annotations={
-        "title": "Get Current Month Calendar Events",
-        "readOnlyHint": True,
-        "destructiveHint": False,
-        "idempotentHint": True,
-        "openWorldHint": True,
-    },
+    annotations=ToolAnnotations(
+        title="Get Current Month Calendar Events",
+        readOnlyHint=True,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=True,
+    ),
 )
 async def lanis_get_calendar_of_month(
     response_format: ResponseFormat = ResponseFormat.MARKDOWN,
@@ -546,13 +547,13 @@ async def lanis_get_calendar_of_month(
 
 @mcp.tool(
     name="get_tasks",
-    annotations={
-        "title": "Get Tasks / Homework (Mein Unterricht)",
-        "readOnlyHint": True,
-        "destructiveHint": False,
-        "idempotentHint": True,
-        "openWorldHint": True,
-    },
+    annotations=ToolAnnotations(
+        title="Get Tasks / Homework (Mein Unterricht)",
+        readOnlyHint=True,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=True,
+    ),
 )
 async def lanis_get_tasks(
     response_format: ResponseFormat = ResponseFormat.MARKDOWN,
@@ -666,13 +667,13 @@ class ConversationsInput(BaseModel):
 
 @mcp.tool(
     name="get_conversations",
-    annotations={
-        "title": "Get Conversations / Messages (Nachrichten)",
-        "readOnlyHint": True,
-        "destructiveHint": False,
-        "idempotentHint": True,
-        "openWorldHint": True,
-    },
+    annotations=ToolAnnotations(
+        title="Get Conversations / Messages (Nachrichten)",
+        readOnlyHint=True,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=True,
+    ),
 )
 async def lanis_get_conversations(params: ConversationsInput) -> str:
     """Return conversations from the 'Nachrichten' section of Lanis.
@@ -766,13 +767,13 @@ async def lanis_get_conversations(params: ConversationsInput) -> str:
 
 @mcp.tool(
     name="get_apps",
-    annotations={
-        "title": "Get All Lanis Web Applets",
-        "readOnlyHint": True,
-        "destructiveHint": False,
-        "idempotentHint": True,
-        "openWorldHint": True,
-    },
+    annotations=ToolAnnotations(
+        title="Get All Lanis Web Applets",
+        readOnlyHint=True,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=True,
+    ),
 )
 async def lanis_get_apps(
     response_format: ResponseFormat = ResponseFormat.MARKDOWN,
@@ -847,13 +848,13 @@ async def lanis_get_apps(
 
 @mcp.tool(
     name="get_available_apps",
-    annotations={
-        "title": "Get Supported Apps Available at This School",
-        "readOnlyHint": True,
-        "destructiveHint": False,
-        "idempotentHint": True,
-        "openWorldHint": True,
-    },
+    annotations=ToolAnnotations(
+        title="Get Supported Apps Available at This School",
+        readOnlyHint=True,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=True,
+    ),
 )
 async def lanis_get_available_apps() -> str:
     """Return the list of LanisAPI-supported apps that are available at this school.
@@ -889,13 +890,13 @@ async def lanis_get_available_apps() -> str:
 
 @mcp.tool(
     name="get_folders",
-    annotations={
-        "title": "Get Lanis Dashboard Folders",
-        "readOnlyHint": True,
-        "destructiveHint": False,
-        "idempotentHint": True,
-        "openWorldHint": True,
-    },
+    annotations=ToolAnnotations(
+        title="Get Lanis Dashboard Folders",
+        readOnlyHint=True,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=True,
+    ),
 )
 async def lanis_get_folders(
     response_format: ResponseFormat = ResponseFormat.MARKDOWN,
@@ -976,13 +977,13 @@ _SUPPORTED_APPS = [
 
 @mcp.tool(
     name="check_app_availability",
-    annotations={
-        "title": "Check If a Specific App Is Available",
-        "readOnlyHint": True,
-        "destructiveHint": False,
-        "idempotentHint": True,
-        "openWorldHint": True,
-    },
+    annotations=ToolAnnotations(
+        title="Check If a Specific App Is Available",
+        readOnlyHint=True,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=True,
+    ),
 )
 async def lanis_check_app_availability(
     app_name: str,
@@ -1030,13 +1031,13 @@ _DAYS = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag"]
 
 @mcp.tool(
     name="get_timetable",
-    annotations={
-        "title": "Get Timetable (Stundenplan)",
-        "readOnlyHint": True,
-        "destructiveHint": False,
-        "idempotentHint": True,
-        "openWorldHint": True,
-    },
+    annotations=ToolAnnotations(
+        title="Get Timetable (Stundenplan)",
+        readOnlyHint=True,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=True,
+    ),
 )
 async def lanis_get_timetable(
     response_format: ResponseFormat = ResponseFormat.MARKDOWN,
@@ -1192,13 +1193,13 @@ async def lanis_get_timetable(
 
 @mcp.tool(
     name="get_learning_groups",
-    annotations={
-        "title": "Get Learning Groups (Lerngruppen)",
-        "readOnlyHint": True,
-        "destructiveHint": False,
-        "idempotentHint": True,
-        "openWorldHint": True,
-    },
+    annotations=ToolAnnotations(
+        title="Get Learning Groups (Lerngruppen)",
+        readOnlyHint=True,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=True,
+    ),
 )
 async def lanis_get_learning_groups(
     response_format: ResponseFormat = ResponseFormat.MARKDOWN,
@@ -1319,13 +1320,13 @@ async def lanis_get_learning_groups(
 
 @mcp.tool(
     name="get_file_storage",
-    annotations={
-        "title": "Get File Storage (Dateispeicher)",
-        "readOnlyHint": True,
-        "destructiveHint": False,
-        "idempotentHint": True,
-        "openWorldHint": True,
-    },
+    annotations=ToolAnnotations(
+        title="Get File Storage (Dateispeicher)",
+        readOnlyHint=True,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=True,
+    ),
 )
 async def lanis_get_file_storage(
     folder_id: Optional[str] = None,
@@ -1466,13 +1467,13 @@ async def lanis_get_file_storage(
 
 @mcp.tool(
     name="get_file_distribution",
-    annotations={
-        "title": "Get File Distribution / Announcements (Dateiverteilung)",
-        "readOnlyHint": True,
-        "destructiveHint": False,
-        "idempotentHint": True,
-        "openWorldHint": True,
-    },
+    annotations=ToolAnnotations(
+        title="Get File Distribution / Announcements (Dateiverteilung)",
+        readOnlyHint=True,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=True,
+    ),
 )
 async def lanis_get_file_distribution(
     response_format: ResponseFormat = ResponseFormat.MARKDOWN,
@@ -1578,13 +1579,13 @@ async def lanis_get_file_distribution(
 
 @mcp.tool(
     name="get_votes",
-    annotations={
-        "title": "Get Active Votes / Elections (Wahlen)",
-        "readOnlyHint": True,
-        "destructiveHint": False,
-        "idempotentHint": True,
-        "openWorldHint": True,
-    },
+    annotations=ToolAnnotations(
+        title="Get Active Votes / Elections (Wahlen)",
+        readOnlyHint=True,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=True,
+    ),
 )
 async def lanis_get_votes(
     response_format: ResponseFormat = ResponseFormat.MARKDOWN,
