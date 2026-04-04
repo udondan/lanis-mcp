@@ -13,7 +13,7 @@ registry:
         description: Your Lanis school ID
       - name: lanis-mcp.username
         env: LANIS_USERNAME
-        example: "Firstname.Lastname"
+        example: Firstname.Lastname
         description: Your Lanis username
       - name: lanis-mcp.password
         env: LANIS_PASSWORD

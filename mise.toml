@@ -27,7 +27,7 @@ run = ".venv/bin/ruff format src/ tests/"
 
 [tasks.docker-build]
 description = "Build the Docker image"
-run = "docker build -t lanis-mcp ."
+run = "docker build -t mcp/lanis-mcp ."
 
 [tasks.inspect]
 description = "Launch the MCP inspector UI"
