@@ -1,0 +1,23 @@
+---
+registry:
+  lanis-mcp:
+    title: Lanis MCP
+    description: Lanis MCP
+    image: mcp/lanis-mcp:latest
+    type: server
+    tools: []
+    secrets:
+      - name: lanis-mcp.school_id
+        env: LANIS_SCHOOL_ID
+        example: "1234"
+        description: Your Lanis school ID
+      - name: lanis-mcp.username
+        env: LANIS_USERNAME
+        example: Firstname.Lastname
+        description: Your Lanis username
+      - name: lanis-mcp.password
+        env: LANIS_PASSWORD
+        example: your_password
+        description: Your Lanis password
+name: lanis
+displayName: lanis
