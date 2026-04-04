@@ -104,6 +104,25 @@ Nach dem Speichern Claude Desktop neu starten.
 
 ---
 
+## Docker MCP
+
+### Docker-Image bauen und registrieren
+
+Voraussetzung: [`mise`](https://mise.jdx.dev) installiert.
+
+```bash
+# Nur bauen
+mise run docker-build
+
+# Nur im Docker MCP Katalog registrieren
+mise run docker-register
+
+# Beides nacheinander
+mise run docker
+```
+
+---
+
 ## Verfügbare Tools
 
 Alle Tools sind **nur lesend** und verändern keine Daten. Die meisten Tools unterstützen die Ausgabeformate `markdown` (Standard, für Menschen lesbar) und `json` (maschinenlesbar).
