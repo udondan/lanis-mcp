@@ -1063,7 +1063,8 @@ async def lanis_get_timetable(
                     "subject": str,     # subject code
                     "room": str,        # room number/name
                     "teacher": str,     # teacher abbreviation
-                    "info": str         # full info from title attribute
+                    "info": str,        # full info from title attribute
+                    "duration": int     # number of school hours this lesson spans
                 }
             ]
         }
@@ -1089,11 +1090,20 @@ async def lanis_get_timetable(
         plan_div = tree.css_first("div.plan[data-date]")
         valid_from = plan_div.attributes.get("data-date", "") if plan_div else ""
 
-        # Parse timetable rows
-        entries: list[dict[str, str]] = []
+        # Parse timetable rows.
+        # The table uses rowspan to represent multi-hour lessons.  A cell with
+        # rowspan=N occupies N consecutive rows in the same column, but only
+        # appears in the DOM once (in the first row).  Subsequent rows have one
+        # fewer physical <td>, which shifts all later cells left by one.
+        # We track occupied (row_idx, col_idx) slots in a set so we can
+        # reconstruct the correct column position for every physical cell.
+        entries: list[dict[str, Any]] = []
         rows = tree.css("table.table-hoverRowspan tbody tr")
 
-        for row in rows:
+        # occupied[(row, col)] = True  →  that slot is filled by a rowspan cell
+        occupied: dict[tuple[int, int], bool] = {}
+
+        for row_idx, row in enumerate(rows):
             cells = row.css("td")
             if not cells:
                 continue
@@ -1108,39 +1118,55 @@ async def lanis_get_timetable(
             if not hour_name:
                 continue
 
-            # Remaining cells: Mon–Fri (index 1–5)
-            for day_idx, cell in enumerate(cells[1:], 0):
-                if day_idx >= len(_DAYS):
+            # Walk remaining physical cells, skipping occupied slots.
+            # col tracks the logical column (0 = Montag, 1 = Dienstag, …).
+            col = 0
+            for cell in cells[1:]:
+                # Skip columns already occupied by a rowspan from a prior row.
+                while occupied.get((row_idx, col)):
+                    col += 1
+
+                if col >= len(_DAYS):
                     break
+
+                day_idx = col
+                rowspan = int(cell.attributes.get("rowspan", 1))
+
+                # Mark the slots below this cell as occupied.
+                for span_row in range(row_idx + 1, row_idx + rowspan):
+                    occupied[(span_row, col)] = True
+
                 stunde = cell.css_first("div.stunde")
-                if not stunde:
-                    continue
+                if stunde:
+                    subject_node = stunde.css_first("b")
+                    subject = subject_node.text(strip=True) if subject_node else ""
+                    teacher_node = stunde.css_first("small")
+                    teacher = teacher_node.text(strip=True) if teacher_node else ""
+                    info = _to_str(stunde.attributes.get("title", ""))
 
-                subject_node = stunde.css_first("b")
-                subject = subject_node.text(strip=True) if subject_node else ""
-                teacher_node = stunde.css_first("small")
-                teacher = teacher_node.text(strip=True) if teacher_node else ""
-                info = _to_str(stunde.attributes.get("title", ""))
+                    # Extract room: text between subject and teacher
+                    full_text = stunde.text(strip=True)
+                    room = ""
+                    if subject and teacher and full_text:
+                        room_raw = full_text.replace(subject, "", 1).replace(
+                            teacher, "", 1
+                        )
+                        room = room_raw.strip()
 
-                # Extract room: text between subject and teacher
-                full_text = stunde.text(strip=True)
-                room = ""
-                if subject and teacher and full_text:
-                    # Remove subject and teacher from full text to get room
-                    room_raw = full_text.replace(subject, "", 1).replace(teacher, "", 1)
-                    room = room_raw.strip()
+                    entries.append(
+                        {
+                            "hour": hour_name,
+                            "time": time_text,
+                            "day": _DAYS[day_idx],
+                            "subject": subject,
+                            "room": room,
+                            "teacher": teacher,
+                            "info": info,
+                            "duration": rowspan,
+                        }
+                    )
 
-                entries.append(
-                    {
-                        "hour": hour_name,
-                        "time": time_text,
-                        "day": _DAYS[day_idx],
-                        "subject": subject,
-                        "room": room,
-                        "teacher": teacher,
-                        "info": info,
-                    }
-                )
+                col += 1
 
         if not entries:
             return "No timetable entries found."
@@ -1171,6 +1197,8 @@ async def lanis_get_timetable(
                 parts = [f"**{e['hour']}**"]
                 if e["time"]:
                     parts.append(f"({e['time']})")
+                if e.get("duration", 1) > 1:
+                    parts.append(f"[{e['duration']} Std.]")
                 if e["subject"]:
                     parts.append(f"– {e['subject']}")
                 if e["room"]:

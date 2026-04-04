@@ -1,3 +1,6 @@
+[settings]
+jobs = 1
+
 [tools]
 python = "3.14"
 
@@ -28,6 +31,14 @@ run = ".venv/bin/ruff format src/ tests/"
 [tasks.docker-build]
 description = "Build the Docker image"
 run = "docker build -t mcp/lanis-mcp ."
+
+[tasks.docker-register]
+description = "Register the Docker image in Docker MCP catalog"
+run = "docker mcp catalog import ./docker-mcp.yml"
+
+[tasks.docker]
+description = "Build and register the Docker image"
+depends = ["docker-build", "docker-register"]
 
 [tasks.inspect]
 description = "Launch the MCP inspector UI"
