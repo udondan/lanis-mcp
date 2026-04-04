@@ -670,3 +670,243 @@ class TestToolNames:
             f"Expected {len(self.EXPECTED_TOOL_NAMES)} tools, "
             f"got {len(tool_names)}: {sorted(tool_names)}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Unit tests: timetable rowspan / duration parsing (no live credentials)
+# ---------------------------------------------------------------------------
+
+
+class TestTimetableParsing:
+    """Unit tests for the timetable HTML parser.
+
+    These tests exercise the virtual-grid algorithm that handles rowspan cells.
+    They do NOT require live credentials — they feed synthetic HTML directly
+    into the same parsing logic used by lanis_get_timetable.
+    """
+
+    def _parse(self, html: str) -> list[dict]:
+        """Run the timetable parsing logic on the given HTML fragment.
+
+        Replicates the inner parsing loop from lanis_get_timetable so we can
+        test it in isolation without an HTTP request.
+        """
+        from selectolax.parser import HTMLParser
+        from typing import Any
+
+        _DAYS = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag"]
+
+        tree = HTMLParser(html)
+        rows = tree.css("table.table-hoverRowspan tbody tr")
+        occupied: dict[tuple[int, int], bool] = {}
+        entries: list[dict[str, Any]] = []
+
+        for row_idx, row in enumerate(rows):
+            cells = row.css("td")
+            if not cells:
+                continue
+
+            hour_cell = cells[0]
+            hour_name_node = hour_cell.css_first("b")
+            hour_name = hour_name_node.text(strip=True) if hour_name_node else ""
+            time_node = hour_cell.css_first("small")
+            time_text = time_node.text(strip=True) if time_node else ""
+
+            if not hour_name:
+                continue
+
+            col = 0
+            for cell in cells[1:]:
+                while occupied.get((row_idx, col)):
+                    col += 1
+                if col >= len(_DAYS):
+                    break
+
+                rowspan = int(cell.attributes.get("rowspan", 1))
+                for span_row in range(row_idx + 1, row_idx + rowspan):
+                    occupied[(span_row, col)] = True
+
+                stunde = cell.css_first("div.stunde")
+                if stunde:
+                    subject_node = stunde.css_first("b")
+                    subject = subject_node.text(strip=True) if subject_node else ""
+                    teacher_node = stunde.css_first("small")
+                    teacher = teacher_node.text(strip=True) if teacher_node else ""
+                    entries.append(
+                        {
+                            "hour": hour_name,
+                            "time": time_text,
+                            "day": _DAYS[col],
+                            "subject": subject,
+                            "teacher": teacher,
+                            "duration": rowspan,
+                        }
+                    )
+                col += 1
+
+        return entries
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _wrap(rows_html: str) -> str:
+        """Wrap table rows in the expected outer HTML structure."""
+        return (
+            "<html><body>"
+            '<table class="table-hoverRowspan"><tbody>' + rows_html + "</tbody></table>"
+            "</body></html>"
+        )
+
+    @staticmethod
+    def _hour_cell(name: str, time: str) -> str:
+        return f"<td><b>{name}</b><small>{time}</small></td>"
+
+    @staticmethod
+    def _lesson(subject: str, teacher: str, rowspan: int = 1) -> str:
+        rs = f' rowspan="{rowspan}"' if rowspan > 1 else ""
+        return (
+            f'<td{rs}><div class="stunde" title="{subject}">'
+            f"<b>{subject}</b><small>{teacher}</small></div></td>"
+        )
+
+    @staticmethod
+    def _empty() -> str:
+        return "<td></td>"
+
+    # ------------------------------------------------------------------
+    # Tests
+    # ------------------------------------------------------------------
+
+    def test_single_hour_lessons_correct_days(self):
+        """Single-hour lessons (no rowspan) are assigned to the correct days."""
+        html = self._wrap(
+            "<tr>"
+            + self._hour_cell("1. Stunde", "07:45 - 08:30")
+            + self._lesson("MAT", "Mül")  # Montag
+            + self._empty()  # Dienstag
+            + self._lesson("DEU", "Sch")  # Mittwoch
+            + self._empty()  # Donnerstag
+            + self._empty()  # Freitag
+            + "</tr>"
+        )
+        entries = self._parse(html)
+        assert len(entries) == 2
+        assert entries[0] == {
+            "hour": "1. Stunde",
+            "time": "07:45 - 08:30",
+            "day": "Montag",
+            "subject": "MAT",
+            "teacher": "Mül",
+            "duration": 1,
+        }
+        assert entries[1]["day"] == "Mittwoch"
+        assert entries[1]["subject"] == "DEU"
+        assert entries[1]["duration"] == 1
+
+    def test_double_period_correct_day(self):
+        """A double-period lesson (rowspan=2) gets the correct day and duration=2."""
+        html = self._wrap(
+            "<tr>"
+            + self._hour_cell("2. Stunde", "08:35 - 09:20")
+            + self._empty()  # Montag empty
+            + self._lesson("ENG", "Web", rowspan=2)  # Dienstag, spans 2 hours
+            + self._empty()  # Mittwoch
+            + self._empty()  # Donnerstag
+            + self._empty()  # Freitag
+            + "</tr>"
+            + "<tr>"
+            + self._hour_cell("3. Stunde", "09:25 - 10:10")
+            # Dienstag slot is occupied by rowspan → only 4 day cells here
+            + self._empty()  # Montag
+            + self._empty()  # Mittwoch
+            + self._empty()  # Donnerstag
+            + self._empty()  # Freitag
+            + "</tr>"
+        )
+        entries = self._parse(html)
+        eng = next(e for e in entries if e["subject"] == "ENG")
+        assert eng["day"] == "Dienstag", f"Expected Dienstag, got {eng['day']}"
+        assert eng["duration"] == 2
+
+    def test_subsequent_entries_correct_day_after_rowspan(self):
+        """Entries after a rowspan cell in the same row are on the correct day.
+
+        This is the main regression: without the fix, PHY would be mapped to
+        Montag instead of Dienstag because the rowspan cell shifts indices.
+        """
+        html = self._wrap(
+            "<tr>"
+            + self._hour_cell("2. Stunde", "08:35 - 09:20")
+            + self._lesson("ENG", "Web", rowspan=2)  # Montag, spans 2 hours
+            + self._empty()  # Dienstag
+            + self._empty()  # Mittwoch
+            + self._empty()  # Donnerstag
+            + self._empty()  # Freitag
+            + "</tr>"
+            + "<tr>"
+            + self._hour_cell("3. Stunde", "09:25 - 10:10")
+            # Montag is occupied by ENG rowspan → only 4 day cells
+            + self._lesson("PHY", "Kle")  # should be Dienstag
+            + self._empty()  # Mittwoch
+            + self._empty()  # Donnerstag
+            + self._empty()  # Freitag
+            + "</tr>"
+        )
+        entries = self._parse(html)
+        phy = next(e for e in entries if e["subject"] == "PHY")
+        assert phy["day"] == "Dienstag", (
+            f"PHY should be on Dienstag after ENG rowspan on Montag, "
+            f"but got: {phy['day']}"
+        )
+        assert phy["duration"] == 1
+
+    def test_triple_period(self):
+        """A triple-period lesson (rowspan=3) has duration=3."""
+        html = self._wrap(
+            "<tr>"
+            + self._hour_cell("1. Stunde", "07:45 - 08:30")
+            + self._lesson("SPO", "Bau", rowspan=3)  # Montag, 3 hours
+            + self._empty() * 4
+            + "</tr>"
+            + "<tr>"
+            + self._hour_cell("2. Stunde", "08:35 - 09:20")
+            + self._empty() * 4
+            + "</tr>"
+            + "<tr>"
+            + self._hour_cell("3. Stunde", "09:25 - 10:10")
+            + self._empty() * 4
+            + "</tr>"
+        )
+        entries = self._parse(html)
+        spo = next(e for e in entries if e["subject"] == "SPO")
+        assert spo["duration"] == 3
+        assert spo["day"] == "Montag"
+
+    def test_multiple_rowspans_same_row(self):
+        """Two rowspan cells in the same row both get correct days."""
+        html = self._wrap(
+            "<tr>"
+            + self._hour_cell("1. Stunde", "07:45 - 08:30")
+            + self._lesson("MAT", "Mül", rowspan=2)  # Montag
+            + self._empty()  # Dienstag
+            + self._lesson("DEU", "Sch", rowspan=2)  # Mittwoch
+            + self._empty()  # Donnerstag
+            + self._empty()  # Freitag
+            + "</tr>"
+            + "<tr>"
+            + self._hour_cell("2. Stunde", "08:35 - 09:20")
+            # Montag and Mittwoch occupied → 3 day cells remain
+            + self._empty()  # Dienstag
+            + self._empty()  # Donnerstag
+            + self._empty()  # Freitag
+            + "</tr>"
+        )
+        entries = self._parse(html)
+        mat = next(e for e in entries if e["subject"] == "MAT")
+        deu = next(e for e in entries if e["subject"] == "DEU")
+        assert mat["day"] == "Montag"
+        assert mat["duration"] == 2
+        assert deu["day"] == "Mittwoch"
+        assert deu["duration"] == 2
