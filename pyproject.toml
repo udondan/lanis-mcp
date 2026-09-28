@@ -9,12 +9,17 @@ description = "MCP server for Schulportal Hessen (Lanis)"
 license = "MIT"
 requires-python = ">=3.11"
 dependencies = [
-    "mcp[cli]>=1.0.0",
+    "mcp[cli]==1.30.0",
     "lanisapi==0.4.1",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest", "pytest-asyncio", "anyio"]
+dev = [
+    "anyio==4.15.1",
+    "pytest==9.1.1",
+    "pytest-asyncio==1.4.0",
+    "ruff==0.16.9",
+]
 
 [project.scripts]
 lanis-mcp = "lanis_mcp.server:main"
@@ -24,6 +29,10 @@ packages = ["src/lanis_mcp"]
 
 [tool.hatch.envs.default]
 dependencies = []
+
+[tool.ruff.lint]
+# Keep the rule set ruff used as its default before 0.16.
+select = ["E4", "E7", "E9", "F"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
