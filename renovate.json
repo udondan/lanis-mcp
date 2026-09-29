@@ -1,19 +1,4 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["github>udondan/renovate-config"],
-  "minimumReleaseAge": null,
-  "automerge": false,
-  "rebaseWhen": "auto",
-  "labels": ["dependencies", "renovate"],
-  "packageRules": [
-    {
-      "matchManagers": ["pip_requirements", "pyproject"],
-      "matchDepTypes": ["devDependencies", "optionalDependencies"],
-      "addLabels": ["dev-dependencies"]
-    },
-    {
-      "matchManagers": ["github-actions"],
-      "addLabels": ["github-actions"]
-    }
-  ]
+  "extends": ["github>udondan/renovate-config"]
 }
