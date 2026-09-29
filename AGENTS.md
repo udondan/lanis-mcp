@@ -1,7 +1,7 @@
 # AGENTS.md — Developer & Agent Guide
 
 This is a Python MCP (Model Context Protocol) server that exposes the German school
-portal "Schulportal Hessen (Lanis)" as LLM-callable tools via the FastMCP framework.
+portal "Schulportal Hessen (Lanis)" as LLM-callable tools via the MCP Python SDK (MCPServer).
 
 ## Project Layout
 
@@ -9,7 +9,7 @@ portal "Schulportal Hessen (Lanis)" as LLM-callable tools via the FastMCP framew
 src/lanis_mcp/
   __init__.py      # package marker
   client.py        # LanisClient singleton: lazy init, auth, session mgmt, monkey-patch
-  server.py        # FastMCP server: all @mcp.tool definitions + shared helpers
+  server.py        # MCPServer: all @mcp.tool definitions + shared helpers
 tests/
   test_lanis.py    # integration tests (require live credentials)
 pyproject.toml     # single source of truth for build, deps, and tool config
