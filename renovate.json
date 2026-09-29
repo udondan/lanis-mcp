@@ -5,6 +5,7 @@
     ":semanticCommitTypeAll(chore)"
   ],
   "mode": "full",
+  "semanticCommits": "enabled",
   "labels": ["dependencies"],
   "packageRules": [
     {
