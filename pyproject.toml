@@ -9,7 +9,7 @@ description = "MCP server for Schulportal Hessen (Lanis)"
 license = "MIT"
 requires-python = ">=3.11"
 dependencies = [
-    "mcp[cli]==1.30.0",
+    "mcp[cli]==2.2.0",
     "lanisapi==0.4.1",
 ]
 

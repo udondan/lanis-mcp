@@ -599,7 +599,7 @@ class TestToolNames:
     """Unit tests verifying that registered MCP tool names are correct.
 
     These tests do NOT require live credentials — they only inspect the
-    FastMCP tool registry to ensure no tool name starts with 'lanis_'.
+    MCPServer tool registry to ensure no tool name starts with 'lanis_'.
     Since the MCP server is registered under the name 'lanis', a tool
     named 'lanis_get_tasks' would be exposed to clients as
     'lanis_lanis_get_tasks' (double prefix), which is wrong.
@@ -624,7 +624,7 @@ class TestToolNames:
     }
 
     def _get_registered_tool_names(self) -> set:
-        """Return the set of tool names registered with the FastMCP instance."""
+        """Return the set of tool names registered with the MCPServer instance."""
         from lanis_mcp.server import mcp
 
         loop = asyncio.new_event_loop()

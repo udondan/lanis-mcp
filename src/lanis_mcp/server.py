@@ -22,7 +22,7 @@ from datetime import datetime, date
 from enum import Enum
 from typing import Any, Optional
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 from mcp.types import ToolAnnotations
 from pydantic import BaseModel, Field, ConfigDict
 from selectolax.parser import HTMLParser as _HTMLParser
@@ -35,7 +35,7 @@ from lanis_mcp.client import get_client, reset_client
 _LANIS_BASE = "https://start.schulportal.hessen.de"
 
 
-mcp = FastMCP("lanis_mcp")
+mcp = MCPServer("lanis_mcp")
 
 CHARACTER_LIMIT = 25_000
 
