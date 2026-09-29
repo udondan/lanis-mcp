@@ -1,21 +1,4 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": [
-    "config:recommended",
-    ":semanticCommitTypeAll(chore)"
-  ],
-  "mode": "full",
-  "semanticCommits": "enabled",
-  "labels": ["dependencies", "renovate"],
-  "packageRules": [
-    {
-      "matchManagers": ["pip_requirements", "pyproject"],
-      "matchDepTypes": ["devDependencies", "optionalDependencies"],
-      "addLabels": ["dev-dependencies"]
-    },
-    {
-      "matchManagers": ["github-actions"],
-      "addLabels": ["github-actions"]
-    }
-  ]
+  "extends": ["github>udondan/renovate-config"]
 }
